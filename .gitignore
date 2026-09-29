@@ -1,0 +1,26 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+
+# Production build
+dist/
+
+# SQLite databases & logs
+server/data/*.db
+server/data/*.db-wal
+server/data/*.db-shm
+*.db
+*.db-wal
+*.db-shm
+*.log
+npm-debug.log*
+
+# OS / Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
