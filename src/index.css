@@ -66,7 +66,7 @@
   padding: 0;
 }
 
-body {
+html, body {
   font-family: var(--font-main);
   background-color: var(--bg-primary);
   color: var(--text-primary);
@@ -74,6 +74,10 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   min-height: 100vh;
+  max-width: 100%;
+  overflow-x: hidden;
+  position: relative;
+  width: 100%;
 }
 
 input, button, select, textarea {
@@ -307,10 +311,26 @@ input, button, select, textarea {
   padding: 28px;
   width: 100%;
   max-width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
   box-shadow: var(--shadow-lg);
   border: 1px solid var(--border-subtle);
   position: relative;
   animation: slideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (max-width: 640px) {
+  .modal-overlay {
+    padding: 0;
+    align-items: flex-end;
+  }
+  .modal-content {
+    border-radius: 20px 20px 0 0;
+    padding: 20px 16px;
+    max-height: 88vh;
+    width: 100%;
+    max-width: 100%;
+  }
 }
 
 @keyframes fadeIn {

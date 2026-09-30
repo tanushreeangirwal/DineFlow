@@ -375,6 +375,57 @@ export default function CustomerView({ restaurantId = 'rest-dineflow-01', onSwit
           overflow-y: auto;
         }
 
+        @media (max-width: 640px) {
+          .customer-page-wrapper {
+            padding: 0 !important;
+            background-color: #FFFFFF !important;
+          }
+
+          .customer-mode-header {
+            display: none !important;
+          }
+
+          .customer-phone-frame {
+            border: none !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+            max-width: 100% !important;
+            min-height: calc(100vh - 46px) !important;
+            width: 100% !important;
+          }
+
+          .customer-content-area {
+            padding: 18px 16px !important;
+          }
+
+          .customer-top-bar {
+            padding: 12px 16px !important;
+          }
+
+          .customer-subnav {
+            padding: 4px !important;
+          }
+
+          .customer-subnav-btn {
+            padding: 7px 4px !important;
+            font-size: 11.5px !important;
+            gap: 4px !important;
+          }
+
+          .hero-title {
+            font-size: 22px !important;
+          }
+
+          .token-big {
+            font-size: 38px !important;
+          }
+
+          .table-big-badge {
+            font-size: 36px !important;
+            padding: 12px 20px !important;
+          }
+        }
+
         .hero-title {
           font-size: 25px;
           font-weight: 800;
@@ -499,7 +550,7 @@ export default function CustomerView({ restaurantId = 'rest-dineflow-01', onSwit
       `}</style>
 
       {/* Switcher header for Testing */}
-      <div style={{ width: '100%', maxWidth: '440px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+      <div className="customer-mode-header" style={{ width: '100%', maxWidth: '440px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
         <span style={{ fontSize: '13px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
           <Smartphone size={15} /> Mobile Customer Experience
         </span>
@@ -530,26 +581,36 @@ export default function CustomerView({ restaurantId = 'rest-dineflow-01', onSwit
             className={`customer-subnav-btn ${activeCustomerTab === 'queue' ? 'active' : ''}`}
             onClick={() => setActiveCustomerTab('queue')}
           >
-            <Clock size={14} /> My Queue
+            <Clock size={13} /> <span>Queue</span>
           </button>
           <button 
             className={`customer-subnav-btn ${activeCustomerTab === 'tables' ? 'active' : ''}`}
             onClick={() => setActiveCustomerTab('tables')}
           >
-            <LayoutGrid size={14} /> Tables ({publicTables.available} Ready)
+            <LayoutGrid size={13} /> <span>Tables</span>
+            <span style={{ 
+              fontSize: '10px', 
+              background: activeCustomerTab === 'tables' ? 'var(--brand-red)' : '#E4E4E7', 
+              color: activeCustomerTab === 'tables' ? '#fff' : 'var(--text-secondary)',
+              padding: '1px 5px',
+              borderRadius: '9999px',
+              fontWeight: 700
+            }}>
+              {publicTables.available}
+            </span>
           </button>
           <button 
             className={`customer-subnav-btn ${activeCustomerTab === 'bill' ? 'active' : ''}`}
             onClick={() => setActiveCustomerTab('bill')}
           >
-            <Receipt size={14} /> My Bill
+            <Receipt size={13} /> <span>Bill</span>
             {activeBill?.hasActiveBill && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#D92D20' }}></span>}
           </button>
           <button 
             className={`customer-subnav-btn ${activeCustomerTab === 'menu' ? 'active' : ''}`}
             onClick={() => setActiveCustomerTab('menu')}
           >
-            <Flame size={14} /> Specials
+            <Flame size={13} /> <span>Specials</span>
           </button>
         </nav>
 

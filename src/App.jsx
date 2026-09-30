@@ -70,64 +70,97 @@ export default function App() {
   return (
     <ErrorBoundary>
       {/* Floating Mode Switcher Bar */}
-      <div style={{
-        backgroundColor: '#18181B',
-        color: '#FFFFFF',
-        padding: '8px 16px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        fontSize: '13px',
-        borderBottom: '1px solid #27272A',
-        position: 'sticky',
-        top: 0,
-        zIndex: 9999
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <style>{`
+        .app-mode-bar {
+          background-color: #18181B;
+          color: #FFFFFF;
+          padding: 8px 16px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          font-size: 13px;
+          border-bottom: 1px solid #27272A;
+          position: sticky;
+          top: 0;
+          z-index: 9999;
+          width: 100%;
+          box-sizing: border-box;
+        }
+        .app-mode-info {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          min-width: 0;
+        }
+        .app-mode-buttons {
+          display: flex;
+          gap: 6px;
+          flex-shrink: 0;
+        }
+        .app-mode-btn {
+          padding: 6px 12px;
+          border-radius: 6px;
+          border: none;
+          color: #FFFFFF;
+          cursor: pointer;
+          font-weight: 600;
+          font-size: 12px;
+          transition: all 0.15s ease;
+          white-space: nowrap;
+        }
+        @media (max-width: 640px) {
+          .app-mode-bar {
+            padding: 8px 12px;
+            gap: 8px;
+          }
+          .app-mode-label-text {
+            display: none;
+          }
+          .app-mode-buttons {
+            display: flex;
+            gap: 6px;
+          }
+          .app-mode-btn {
+            padding: 5px 9px;
+            font-size: 11.5px;
+          }
+        }
+      `}</style>
+      <div className="app-mode-bar">
+        <div className="app-mode-info">
           <span style={{ 
             width: '8px', 
             height: '8px', 
             borderRadius: '50%', 
             backgroundColor: '#D92D20', 
-            display: 'inline-block' 
+            display: 'inline-block',
+            flexShrink: 0 
           }}></span>
-          <span style={{ fontWeight: 700, letterSpacing: '0.02em' }}>DineFlow MVP</span>
-          <span style={{ color: '#71717A' }}>|</span>
-          <span style={{ color: '#A1A1AA' }}>Current View: <strong>{activeMode === 'dashboard' ? 'Restaurant Staff Dashboard' : 'Customer Mobile View (QR)'}</strong></span>
+          <span style={{ fontWeight: 700, letterSpacing: '0.02em', whiteSpace: 'nowrap' }}>DineFlow</span>
+          <span className="app-mode-label-text" style={{ color: '#71717A' }}>|</span>
+          <span className="app-mode-label-text" style={{ color: '#A1A1AA', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {activeMode === 'dashboard' ? 'Staff Dashboard' : 'Customer View (QR)'}
+          </span>
         </div>
 
-        <div style={{ display: 'flex', gap: '6px' }}>
+        <div className="app-mode-buttons">
           <button
             onClick={() => switchMode('dashboard')}
+            className="app-mode-btn"
             style={{
-              padding: '5px 12px',
-              borderRadius: '6px',
-              border: 'none',
               background: activeMode === 'dashboard' ? '#D92D20' : '#27272A',
-              color: '#FFFFFF',
-              cursor: 'pointer',
-              fontWeight: 600,
-              fontSize: '12px',
-              transition: 'all 0.15s ease'
             }}
           >
-            👨‍🍳 Restaurant Dashboard
+            👨‍🍳 Dashboard
           </button>
           <button
             onClick={() => switchMode('customer')}
+            className="app-mode-btn"
             style={{
-              padding: '5px 12px',
-              borderRadius: '6px',
-              border: 'none',
               background: activeMode === 'customer' ? '#D92D20' : '#27272A',
-              color: '#FFFFFF',
-              cursor: 'pointer',
-              fontWeight: 600,
-              fontSize: '12px',
-              transition: 'all 0.15s ease'
             }}
           >
-            📱 Customer Mobile (QR)
+            📱 Customer (QR)
           </button>
         </div>
       </div>

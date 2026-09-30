@@ -431,6 +431,12 @@ export default function DashboardView({ restaurantId = 'rest-dineflow-01', onOpe
           z-index: 100;
         }
 
+        .dashboard-nav-brand-wrap {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
         .dashboard-brand {
           display: flex;
           align-items: center;
@@ -461,6 +467,8 @@ export default function DashboardView({ restaurantId = 'rest-dineflow-01', onOpe
           gap: 8px;
           position: relative;
           transition: color 0.15s ease;
+          white-space: nowrap;
+          flex-shrink: 0;
         }
 
         .tab-btn:hover {
@@ -480,6 +488,12 @@ export default function DashboardView({ restaurantId = 'rest-dineflow-01', onOpe
           height: 3px;
           background-color: var(--brand-red);
           border-radius: 3px 3px 0 0;
+        }
+
+        .dashboard-nav-actions {
+          display: flex;
+          align-items: center;
+          gap: 14px;
         }
 
         .dashboard-main {
@@ -502,14 +516,107 @@ export default function DashboardView({ restaurantId = 'rest-dineflow-01', onOpe
           .summary-grid {
             grid-template-columns: repeat(2, 1fr);
           }
-          .dashboard-nav {
-            padding: 0 16px;
-          }
         }
 
-        @media (max-width: 600px) {
+        @media (max-width: 860px) {
+          .dashboard-nav {
+            height: auto !important;
+            padding: 10px 14px 4px 14px !important;
+            display: grid !important;
+            grid-template-columns: 1fr auto !important;
+            grid-template-rows: auto auto !important;
+            row-gap: 8px !important;
+          }
+
+          .dashboard-nav-brand-wrap {
+            grid-column: 1 !important;
+            grid-row: 1 !important;
+          }
+
+          .dashboard-nav-actions {
+            grid-column: 2 !important;
+            grid-row: 1 !important;
+            display: flex !important;
+            align-items: center !important;
+            gap: 8px !important;
+          }
+
+          .dashboard-tabs {
+            grid-column: 1 / -1 !important;
+            grid-row: 2 !important;
+            overflow-x: auto !important;
+            white-space: nowrap !important;
+            -webkit-overflow-scrolling: touch !important;
+            scrollbar-width: none !important;
+            display: flex !important;
+            gap: 6px !important;
+            padding-bottom: 6px !important;
+            margin: 0 -14px !important;
+            padding-left: 14px !important;
+            padding-right: 14px !important;
+            border-top: 1px solid var(--border-light) !important;
+            padding-top: 8px !important;
+            height: auto !important;
+          }
+
+          .dashboard-tabs::-webkit-scrollbar {
+            display: none !important;
+          }
+
+          .tab-btn {
+            height: 34px !important;
+            padding: 0 12px !important;
+            font-size: 13px !important;
+            border-radius: var(--radius-full) !important;
+            background-color: var(--bg-secondary) !important;
+            border: 1px solid var(--border-subtle) !important;
+          }
+
+          .tab-btn.active {
+            background-color: var(--brand-red-subtle) !important;
+            color: var(--brand-red) !important;
+            border-color: var(--brand-red-border) !important;
+          }
+
+          .tab-btn.active::after {
+            display: none !important;
+          }
+
+          .dashboard-main {
+            padding: 16px 12px 64px 12px !important;
+          }
+
           .summary-grid {
-            grid-template-columns: 1fr;
+            grid-template-columns: repeat(2, 1fr) !important;
+            gap: 10px !important;
+            margin-bottom: 20px !important;
+          }
+
+          .summary-card {
+            padding: 14px 16px !important;
+          }
+
+          .summary-number {
+            font-size: 28px !important;
+          }
+
+          .tables-grid {
+            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)) !important;
+            gap: 10px !important;
+          }
+
+          .table-card {
+            padding: 14px 10px !important;
+          }
+
+          .table-name {
+            font-size: 20px !important;
+          }
+
+          .section-header-wrap {
+            flex-direction: column !important;
+            align-items: flex-start !important;
+            gap: 12px !important;
           }
         }
 
@@ -590,7 +697,7 @@ export default function DashboardView({ restaurantId = 'rest-dineflow-01', onOpe
 
       {/* Top Navigation */}
       <header className="dashboard-nav">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '28px' }}>
+        <div className="dashboard-nav-brand-wrap">
           <div className="dashboard-brand">
             <span style={{ 
               width: '32px', 
@@ -607,68 +714,65 @@ export default function DashboardView({ restaurantId = 'rest-dineflow-01', onOpe
             </span>
             <span>DineFlow</span>
           </div>
-
-          <nav className="dashboard-tabs">
-            <button 
-              className={`tab-btn ${activeTab === 'dashboard' ? 'active' : ''}`}
-              onClick={() => setActiveTab('dashboard')}
-            >
-              Dashboard
-            </button>
-            <button 
-              className={`tab-btn ${activeTab === 'queue' ? 'active' : ''}`}
-              onClick={() => setActiveTab('queue')}
-            >
-              Queue {waitingQueue.length > 0 && <span className="badge badge-waiting" style={{ padding: '2px 7px', fontSize: '11px' }}>{waitingQueue.length}</span>}
-            </button>
-            <button 
-              className={`tab-btn ${activeTab === 'tables' ? 'active' : ''}`}
-              onClick={() => setActiveTab('tables')}
-            >
-              Tables
-            </button>
-            <button 
-              className={`tab-btn ${activeTab === 'customers' ? 'active' : ''}`}
-              onClick={() => setActiveTab('customers')}
-            >
-              Customers
-            </button>
-            <button 
-              className={`tab-btn ${activeTab === 'offers' ? 'active' : ''}`}
-              onClick={() => setActiveTab('offers')}
-            >
-              Offers & WhatsApp
-            </button>
-            <button 
-              className={`tab-btn ${activeTab === 'qr' ? 'active' : ''}`}
-              onClick={() => setActiveTab('qr')}
-            >
-              QR Code
-            </button>
-            <button 
-              className={`tab-btn ${activeTab === 'led' ? 'active' : ''}`}
-              onClick={() => setActiveTab('led')}
-            >
-              LED Display
-            </button>
-          </nav>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+        <nav className="dashboard-tabs">
+          <button 
+            className={`tab-btn ${activeTab === 'dashboard' ? 'active' : ''}`}
+            onClick={() => setActiveTab('dashboard')}
+          >
+            Dashboard
+          </button>
+          <button 
+            className={`tab-btn ${activeTab === 'queue' ? 'active' : ''}`}
+            onClick={() => setActiveTab('queue')}
+          >
+            Queue {waitingQueue.length > 0 && <span className="badge badge-waiting" style={{ padding: '2px 7px', fontSize: '11px' }}>{waitingQueue.length}</span>}
+          </button>
+          <button 
+            className={`tab-btn ${activeTab === 'tables' ? 'active' : ''}`}
+            onClick={() => setActiveTab('tables')}
+          >
+            Tables
+          </button>
+          <button 
+            className={`tab-btn ${activeTab === 'customers' ? 'active' : ''}`}
+            onClick={() => setActiveTab('customers')}
+          >
+            Customers
+          </button>
+          <button 
+            className={`tab-btn ${activeTab === 'offers' ? 'active' : ''}`}
+            onClick={() => setActiveTab('offers')}
+          >
+            Offers & WhatsApp
+          </button>
+          <button 
+            className={`tab-btn ${activeTab === 'qr' ? 'active' : ''}`}
+            onClick={() => setActiveTab('qr')}
+          >
+            QR Code
+          </button>
+          <button 
+            className={`tab-btn ${activeTab === 'led' ? 'active' : ''}`}
+            onClick={() => setActiveTab('led')}
+          >
+            LED Display
+          </button>
+        </nav>
+
+        <div className="dashboard-nav-actions">
           {/* Quick test: Open customer QR view */}
           <button 
             onClick={onOpenCustomerView}
             className="btn btn-secondary"
-            style={{ padding: '8px 14px', fontSize: '13.5px' }}
+            style={{ padding: '7px 12px', fontSize: '12.5px' }}
             title="Open customer-facing QR interface"
           >
-            <QrCode size={15} /> Open Customer View
+            <QrCode size={14} /> Open Customer View
           </button>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderLeft: '1px solid var(--border-subtle)', paddingLeft: '14px' }}>
-            <span style={{ fontSize: '13.5px', fontWeight: 600 }}>{restaurant?.name || 'Restaurant Staff'}</span>
-            <span className="badge badge-available" style={{ fontSize: '11px' }}>Live</span>
-          </div>
+          <span className="badge badge-available" style={{ fontSize: '11px', padding: '3px 8px' }}>Live</span>
         </div>
       </header>
 
