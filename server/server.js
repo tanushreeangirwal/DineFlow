@@ -200,10 +200,15 @@ app.patch('/api/tables/:id/status', (req, res) => {
     const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id);
     if (!table) return res.status(404).json({ error: 'Table not found' });
 
+    if (status === 'AVAILABLE') {
+      db.prepare(`UPDATE queue_entries SET assigned_table_id = NULL WHERE assigned_table_id = ? AND status = 'WAITING'`).run(req.params.id);
+    }
+
     db.prepare('UPDATE tables SET status = ? WHERE id = ?').run(status, req.params.id);
     const updated = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id);
 
     sendSseUpdate(table.restaurant_id, 'table_update', { table: updated, action: 'status_changed' });
+    sendSseUpdate(table.restaurant_id, 'queue_update', { action: 'table_status_changed' });
     res.json(updated);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -248,6 +253,7 @@ app.get('/api/restaurants/:id/dashboard-stats', (req, res) => {
 });
 
 // ---------------- QUEUE MANAGEMENT ----------------
+// ---------------- QUEUE MANAGEMENT ----------------
 app.get('/api/restaurants/:id/queue', (req, res) => {
   try {
     const { id } = req.params;
@@ -259,6 +265,7 @@ app.get('/api/restaurants/:id/queue', (req, res) => {
         c.marketing_consent,
         c.visit_count,
         t.table_number as assigned_table_number,
+        t.capacity as assigned_table_capacity,
         ROUND((julianday('now') - julianday(q.joined_at)) * 1440) as wait_minutes
       FROM queue_entries q
       JOIN customers c ON q.customer_id = c.id
@@ -281,14 +288,14 @@ app.get('/api/restaurants/:id/queue', (req, res) => {
 
 // ---------------- CUSTOMER CHECK-IN (QR Flow) ----------------
 /**
- * Customer scans QR -> Enters Name + Mobile + optional consent.
- * Evaluates table availability:
- * - If AVAILABLE table exists -> Assigns immediately (STATE A)
- * - If NO table available -> Generates token, adds to queue (STATE B)
+ * Customer scans QR -> Enters Name + Mobile + Party Size + Seating Preference.
+ * Evaluates table availability accurately:
+ * - If NO customers are waiting AND an available table matches party size -> Assigns immediately (STATE A)
+ * - If queue is active OR no matching table available -> Generates token, adds to queue (STATE B)
  */
 app.post('/api/customer/check-in', (req, res) => {
   try {
-    const { restaurantId, name, mobile, marketingConsent } = req.body;
+    const { restaurantId, name, mobile, marketingConsent, partySize, seatingPreference } = req.body;
 
     if (!restaurantId || !name || !mobile) {
       return res.status(400).json({ error: 'Restaurant ID, name, and mobile number are required' });
@@ -297,6 +304,8 @@ app.post('/api/customer/check-in', (req, res) => {
     const cleanMobile = mobile.trim();
     const cleanName = name.trim();
     const consent = marketingConsent ? 1 : 0;
+    const guests = Math.max(1, parseInt(partySize, 10) || 2);
+    const preference = seatingPreference || 'Any Table';
 
     // 1. Find or create customer
     let customer = db.prepare('SELECT * FROM customers WHERE restaurant_id = ? AND mobile = ?')
@@ -320,7 +329,7 @@ app.post('/api/customer/check-in', (req, res) => {
 
     // 2. Check for active waiting or ready queue entry for this customer
     const activeEntry = db.prepare(`
-      SELECT q.*, t.table_number as assigned_table_number
+      SELECT q.*, t.table_number as assigned_table_number, coalesce(t.section, 'Main Hall') as section
       FROM queue_entries q
       LEFT JOIN tables t ON q.assigned_table_id = t.id
       WHERE q.restaurant_id = ? AND q.customer_id = ? AND q.status IN ('WAITING', 'READY')
@@ -333,7 +342,7 @@ app.post('/api/customer/check-in', (req, res) => {
         SELECT token_number FROM queue_entries 
         WHERE restaurant_id = ? AND status = 'READY'
         ORDER BY called_at DESC LIMIT 1
-      `).get(restaurantId)?.token_number || 'A-001';
+      `).get(restaurantId)?.token_number || 'A-020';
 
       const peopleAhead = db.prepare(`
         SELECT COUNT(*) as count FROM queue_entries
@@ -351,28 +360,51 @@ app.post('/api/customer/check-in', (req, res) => {
       });
     }
 
-    // 3. Check for available tables
-    const availableTable = db.prepare(`
-      SELECT * FROM tables 
-      WHERE restaurant_id = ? AND status = 'AVAILABLE'
-      ORDER BY table_number ASC LIMIT 1
-    `).get(restaurantId);
+    // 3. Check queue count: if anyone is ALREADY waiting, this customer MUST join the queue!
+    const waitingCount = db.prepare(`
+      SELECT COUNT(*) as count FROM queue_entries
+      WHERE restaurant_id = ? AND status = 'WAITING'
+    `).get(restaurantId).count;
+
+    let availableTable = null;
+
+    // Only allow instant seating if NO ONE is waiting ahead in line!
+    if (waitingCount === 0) {
+      if (preference && preference !== 'Any Table') {
+        availableTable = db.prepare(`
+          SELECT * FROM tables 
+          WHERE restaurant_id = ? AND status = 'AVAILABLE' AND capacity >= ? AND section = ?
+          ORDER BY capacity ASC, table_number ASC LIMIT 1
+        `).get(restaurantId, guests, preference);
+      }
+
+      if (!availableTable) {
+        availableTable = db.prepare(`
+          SELECT * FROM tables 
+          WHERE restaurant_id = ? AND status = 'AVAILABLE' AND capacity >= ?
+          ORDER BY capacity ASC, table_number ASC LIMIT 1
+        `).get(restaurantId, guests);
+      }
+    }
 
     if (availableTable) {
-      // STATE A: Table Available!
-      // Assign table right away
+      // STATE A: Table Available immediately!
       db.prepare(`UPDATE tables SET status = 'ASSIGNED' WHERE id = ?`).run(availableTable.id);
 
-      // Create an instant ready queue entry / visit
       const tokenNumber = generateNextToken(restaurantId);
       const queueEntryId = 'q-' + crypto.randomUUID().slice(0, 8);
 
       db.prepare(`
-        INSERT INTO queue_entries (id, restaurant_id, customer_id, token_number, status, assigned_table_id, joined_at, called_at, estimated_wait)
-        VALUES (?, ?, ?, ?, 'READY', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
-      `).run(queueEntryId, restaurantId, customer.id, tokenNumber, availableTable.id);
+        INSERT INTO queue_entries (id, restaurant_id, customer_id, token_number, status, assigned_table_id, party_size, seating_preference, joined_at, called_at, estimated_wait)
+        VALUES (?, ?, ?, ?, 'READY', ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
+      `).run(queueEntryId, restaurantId, customer.id, tokenNumber, availableTable.id, guests, preference);
 
-      const queueEntry = db.prepare('SELECT * FROM queue_entries WHERE id = ?').get(queueEntryId);
+      const queueEntry = db.prepare(`
+        SELECT q.*, t.table_number as assigned_table_number, coalesce(t.section, 'Main Hall') as section
+        FROM queue_entries q
+        LEFT JOIN tables t ON q.assigned_table_id = t.id
+        WHERE q.id = ?
+      `).get(queueEntryId);
 
       // Trigger notification
       notificationService.notifyTableReady({
@@ -397,26 +429,20 @@ app.post('/api/customer/check-in', (req, res) => {
         customer
       });
     } else {
-      // STATE B: Table NOT Available -> Join Waiting Queue
+      // STATE B: Queue Joined (restaurant is full or queue is active)
       const tokenNumber = generateNextToken(restaurantId);
       const queueEntryId = 'q-' + crypto.randomUUID().slice(0, 8);
 
-      // Calculate people ahead
-      const peopleAhead = db.prepare(`
-        SELECT COUNT(*) as count FROM queue_entries
-        WHERE restaurant_id = ? AND status = 'WAITING'
-      `).get(restaurantId).count;
-
-      const estimatedWait = Math.max(10, (peopleAhead + 1) * 5);
+      const peopleAhead = waitingCount;
+      const estimatedWait = Math.max(5, (peopleAhead + 1) * 6);
 
       db.prepare(`
-        INSERT INTO queue_entries (id, restaurant_id, customer_id, token_number, status, joined_at, estimated_wait)
-        VALUES (?, ?, ?, ?, 'WAITING', CURRENT_TIMESTAMP, ?)
-      `).run(queueEntryId, restaurantId, customer.id, tokenNumber, estimatedWait);
+        INSERT INTO queue_entries (id, restaurant_id, customer_id, token_number, status, party_size, seating_preference, joined_at, estimated_wait)
+        VALUES (?, ?, ?, ?, 'WAITING', ?, ?, CURRENT_TIMESTAMP, ?)
+      `).run(queueEntryId, restaurantId, customer.id, tokenNumber, guests, preference, estimatedWait);
 
       const queueEntry = db.prepare('SELECT * FROM queue_entries WHERE id = ?').get(queueEntryId);
 
-      // Get currently serving token
       const currentlyServing = db.prepare(`
         SELECT token_number FROM queue_entries
         WHERE restaurant_id = ? AND status IN ('READY', 'SERVED')
@@ -523,8 +549,20 @@ app.post('/api/queue/:queueEntryId/call', async (req, res) => {
     const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(tableId);
     if (!table) return res.status(404).json({ error: 'Table not found' });
 
+    // Ensure table is either AVAILABLE or already assigned to THIS customer
+    if (table.status !== 'AVAILABLE' && queueEntry.assigned_table_id !== tableId) {
+      return res.status(400).json({ 
+        error: `Table ${table.table_number} is currently ${table.status}. Please choose an AVAILABLE table.` 
+      });
+    }
+
     const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(queueEntry.customer_id);
     const restaurant = db.prepare('SELECT name FROM restaurants WHERE id = ?').get(queueEntry.restaurant_id);
+
+    // If customer already held a different table, release the old table
+    if (queueEntry.assigned_table_id && queueEntry.assigned_table_id !== tableId) {
+      db.prepare(`UPDATE tables SET status = 'AVAILABLE' WHERE id = ?`).run(queueEntry.assigned_table_id);
+    }
 
     // 1. Assign table to customer & set status to READY
     db.prepare(`
@@ -547,7 +585,13 @@ app.post('/api/queue/:queueEntryId/call', async (req, res) => {
       restaurantName: restaurant?.name
     });
 
-    const updatedQueue = db.prepare('SELECT * FROM queue_entries WHERE id = ?').get(queueEntryId);
+    const updatedQueue = db.prepare(`
+      SELECT q.*, t.table_number as assigned_table_number, c.name as customer_name, c.mobile as customer_mobile
+      FROM queue_entries q
+      LEFT JOIN tables t ON q.assigned_table_id = t.id
+      JOIN customers c ON q.customer_id = c.id
+      WHERE q.id = ?
+    `).get(queueEntryId);
     const updatedTable = db.prepare('SELECT * FROM tables WHERE id = ?').get(tableId);
 
     sendSseUpdate(queueEntry.restaurant_id, 'queue_update', {
@@ -565,6 +609,96 @@ app.post('/api/queue/:queueEntryId/call', async (req, res) => {
     });
   } catch (err) {
     console.error('Call error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------- STAFF ACTION: AUTO-SEAT NEXT IN LINE ----------------
+app.post('/api/restaurants/:id/auto-seat-next', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // 1. Find next waiting customer in chronological order
+    const nextCustomer = db.prepare(`
+      SELECT q.*, c.name as customer_name, c.mobile as customer_mobile
+      FROM queue_entries q
+      JOIN customers c ON q.customer_id = c.id
+      WHERE q.restaurant_id = ? AND q.status = 'WAITING'
+      ORDER BY q.joined_at ASC LIMIT 1
+    `).get(id);
+
+    if (!nextCustomer) {
+      return res.status(400).json({ error: 'No customers currently waiting in the queue' });
+    }
+
+    const guests = nextCustomer.party_size || 2;
+
+    // 2. Find best-fit available table matching capacity
+    let table = db.prepare(`
+      SELECT * FROM tables
+      WHERE restaurant_id = ? AND status = 'AVAILABLE' AND capacity >= ?
+      ORDER BY capacity ASC, table_number ASC LIMIT 1
+    `).get(id, guests);
+
+    if (!table) {
+      // Fallback: any available table
+      table = db.prepare(`
+        SELECT * FROM tables
+        WHERE restaurant_id = ? AND status = 'AVAILABLE'
+        ORDER BY capacity DESC, table_number ASC LIMIT 1
+      `).get(id);
+    }
+
+    if (!table) {
+      return res.status(400).json({ error: 'No tables currently available to assign' });
+    }
+
+    // 3. Assign table & update status
+    db.prepare(`
+      UPDATE queue_entries
+      SET status = 'READY', assigned_table_id = ?, called_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(table.id, nextCustomer.id);
+
+    db.prepare(`UPDATE tables SET status = 'ASSIGNED' WHERE id = ?`).run(table.id);
+
+    const restaurant = db.prepare('SELECT name FROM restaurants WHERE id = ?').get(id);
+
+    const notif = await notificationService.notifyTableReady({
+      restaurantId: id,
+      customerId: nextCustomer.customer_id,
+      tokenNumber: nextCustomer.token_number,
+      tableNumber: table.table_number,
+      customerName: nextCustomer.customer_name,
+      mobile: nextCustomer.customer_mobile,
+      restaurantName: restaurant?.name
+    });
+
+    const updatedQueue = db.prepare(`
+      SELECT q.*, t.table_number as assigned_table_number, c.name as customer_name, c.mobile as customer_mobile
+      FROM queue_entries q
+      LEFT JOIN tables t ON q.assigned_table_id = t.id
+      JOIN customers c ON q.customer_id = c.id
+      WHERE q.id = ?
+    `).get(nextCustomer.id);
+
+    const updatedTable = db.prepare('SELECT * FROM tables WHERE id = ?').get(table.id);
+
+    sendSseUpdate(id, 'queue_update', {
+      action: 'customer_called',
+      queueEntry: updatedQueue,
+      table: updatedTable,
+      notification: notif
+    });
+
+    res.json({
+      success: true,
+      queueEntry: updatedQueue,
+      table: updatedTable,
+      notification: notif
+    });
+  } catch (err) {
+    console.error('Auto-seat error:', err);
     res.status(500).json({ error: err.message });
   }
 });

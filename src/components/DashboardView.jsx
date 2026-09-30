@@ -175,6 +175,7 @@ export default function DashboardView({ restaurantId = 'rest-dineflow-01', onOpe
       if (res.ok) {
         showToast(`Table status updated to ${newStatus}`);
         loadTables();
+        loadQueue();
         loadStats();
       }
     } catch (err) {
@@ -205,19 +206,29 @@ export default function DashboardView({ restaurantId = 'rest-dineflow-01', onOpe
     }
   };
 
-  // Initiate Call modal
+  // Initiate Call modal - picks the best capacity match among AVAILABLE tables
   const openCallModal = (queueEntry) => {
-    // Pick the first available table as default
-    const available = tables.find(t => t.status === 'AVAILABLE');
+    const partySize = queueEntry.party_size || 2;
+    const availableTables = tables.filter(t => t.status === 'AVAILABLE');
+    
+    // Prioritize tables with capacity >= partySize, sorted by capacity ascending (best fit)
+    const fittingTables = availableTables
+      .filter(t => t.capacity >= partySize)
+      .sort((a, b) => a.capacity - b.capacity || a.table_number.localeCompare(b.table_number));
+    
+    const bestTable = fittingTables[0] || availableTables[0] || null;
     setCallModalData({
       queueEntry,
-      selectedTableId: available ? available.id : (tables[0] ? tables[0].id : '')
+      selectedTableId: bestTable ? bestTable.id : ''
     });
   };
 
   // Confirm Call and Table Assignment
   const handleConfirmCall = async () => {
-    if (!callModalData || !callModalData.selectedTableId) return;
+    if (!callModalData || !callModalData.selectedTableId) {
+      showToast('Please select an available table');
+      return;
+    }
 
     const { queueEntry, selectedTableId } = callModalData;
 
@@ -230,7 +241,7 @@ export default function DashboardView({ restaurantId = 'rest-dineflow-01', onOpe
 
       if (res.ok) {
         const selectedTable = tables.find(t => t.id === selectedTableId);
-        showToast(`Assigned ${queueEntry.token_number} to ${selectedTable?.table_number || 'Table'} & Notified Customer`);
+        showToast(`Assigned ${queueEntry.token_number} (${queueEntry.customer_name}) to ${selectedTable?.table_number || 'Table'} & Notified Customer`);
         playNotificationChime();
         setCallModalData(null);
         loadQueue();
@@ -245,34 +256,25 @@ export default function DashboardView({ restaurantId = 'rest-dineflow-01', onOpe
     }
   };
 
-  // 1-Click Auto Assign Next Customer to Available Table
+  // 1-Click Auto Assign Next Customer to Available Table using backend fair capacity matching
   const handleAutoAssignNext = async () => {
-    if (waitingQueue.length === 0) {
-      showToast('No customers currently waiting in line');
-      return;
-    }
-    const available = tables.find(t => t.status === 'AVAILABLE');
-    if (!available) {
-      showToast('No tables currently available to assign');
-      return;
-    }
-
-    const nextCustomer = waitingQueue[0];
     try {
-      const res = await fetch(`/api/queue/${nextCustomer.id}/call`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tableId: available.id })
+      const res = await fetch(`/api/restaurants/${restaurantId}/auto-seat-next`, {
+        method: 'POST'
       });
+      const data = await res.json();
       if (res.ok) {
-        showToast(`⚡ Auto-assigned ${nextCustomer.token_number} (${nextCustomer.customer_name}) to Table ${available.table_number}!`);
+        showToast(`⚡ ${data.message}`);
         playNotificationChime();
         loadQueue();
         loadTables();
         loadStats();
+      } else {
+        showToast(data.error || 'No matching available tables or waiting customers');
       }
     } catch (err) {
-      console.error(err);
+      console.error('Auto seat next error:', err);
+      showToast('Error during auto-assignment');
     }
   };
 
@@ -926,11 +928,21 @@ export default function DashboardView({ restaurantId = 'rest-dineflow-01', onOpe
                           </td>
                           <td>
                             <div style={{ fontWeight: 600 }}>{item.customer_name}</div>
-                            {item.visit_count > 1 && (
-                              <span style={{ fontSize: '11px', color: '#027A48', background: '#ECFDF3', padding: '1px 6px', borderRadius: '4px' }}>
-                                Repeat Guest ({item.visit_count} visits)
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: '11px', background: 'var(--bg-secondary)', padding: '1px 6px', borderRadius: '4px', color: 'var(--text-primary)', fontWeight: 600 }}>
+                                Party of {item.party_size || 2}
                               </span>
-                            )}
+                              {item.seating_preference && item.seating_preference !== 'Any Table' && (
+                                <span style={{ fontSize: '11px', background: '#EFF6FF', color: '#1D4ED8', padding: '1px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                                  {item.seating_preference}
+                                </span>
+                              )}
+                              {item.visit_count > 1 && (
+                                <span style={{ fontSize: '11px', color: '#027A48', background: '#ECFDF3', padding: '1px 6px', borderRadius: '4px' }}>
+                                  Repeat ({item.visit_count}x)
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td style={{ color: 'var(--text-secondary)' }}>{item.customer_mobile}</td>
                           <td>
@@ -978,6 +990,16 @@ export default function DashboardView({ restaurantId = 'rest-dineflow-01', onOpe
               </div>
 
               <div style={{ display: 'flex', gap: '10px' }}>
+                {waitingQueue.length > 0 && stats.availableTables > 0 && (
+                  <button 
+                    onClick={handleAutoAssignNext} 
+                    className="btn btn-primary" 
+                    style={{ padding: '8px 16px', fontSize: '13px' }}
+                    title="Automatically assigns next customer to available table & sends WhatsApp/SMS notification"
+                  >
+                    <Zap size={14} /> Auto-Seat Next ({waitingQueue[0]?.token_number})
+                  </button>
+                )}
                 <button onClick={loadQueue} className="btn btn-secondary" style={{ padding: '8px 14px', fontSize: '13px' }}>
                   <RefreshCw size={14} /> Refresh
                 </button>
@@ -1022,7 +1044,15 @@ export default function DashboardView({ restaurantId = 'rest-dineflow-01', onOpe
                             </span>
                           )}
                         </div>
-                        <div style={{ fontSize: '14px', color: 'var(--text-secondary)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{ fontSize: '14px', color: 'var(--text-secondary)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--bg-secondary)', padding: '2px 8px', borderRadius: '4px', fontWeight: 600, color: 'var(--text-primary)', fontSize: '12.5px' }}>
+                            <Users size={13} /> Party of {item.party_size || 2}
+                          </span>
+                          {item.seating_preference && item.seating_preference !== 'Any Table' && (
+                            <span style={{ fontSize: '11px', background: '#EFF6FF', color: '#1D4ED8', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                              {item.seating_preference}
+                            </span>
+                          )}
                           <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <Phone size={13} /> {item.customer_mobile}
                           </span>
@@ -1697,22 +1727,61 @@ export default function DashboardView({ restaurantId = 'rest-dineflow-01', onOpe
               </button>
             </div>
 
-            <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '20px' }}>
-              Customer: <strong>{callModalData.queueEntry.customer_name}</strong> ({callModalData.queueEntry.customer_mobile})
-            </p>
+            <div style={{ color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '18px', background: 'var(--bg-secondary)', padding: '10px 14px', borderRadius: 'var(--radius-md)' }}>
+              <div>Customer: <strong>{callModalData.queueEntry.customer_name}</strong> ({callModalData.queueEntry.customer_mobile})</div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '4px', flexWrap: 'wrap' }}>
+                <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                  Party Size: {callModalData.queueEntry.party_size || 2} Guests
+                </span>
+                {callModalData.queueEntry.seating_preference && (
+                  <span style={{ fontSize: '12px', background: '#EFF6FF', color: '#1D4ED8', padding: '1px 6px', borderRadius: '4px' }}>
+                    Pref: {callModalData.queueEntry.seating_preference}
+                  </span>
+                )}
+              </div>
+            </div>
 
             <div className="form-group">
-              <label className="form-label">Assign Available Table</label>
+              <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>Assign Available Table</span>
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                  Seats needed: {callModalData.queueEntry.party_size || 2}
+                </span>
+              </label>
               <select 
                 className="form-input"
                 value={callModalData.selectedTableId}
                 onChange={e => setCallModalData({ ...callModalData, selectedTableId: e.target.value })}
               >
-                {tables.map(t => (
-                  <option key={t.id} value={t.id}>
-                    {t.table_number} ({t.status} - Seats {t.capacity})
-                  </option>
-                ))}
+                {tables.filter(t => t.status === 'AVAILABLE').length === 0 ? (
+                  <option value="" disabled>⚠️ No tables currently available</option>
+                ) : (
+                  <optgroup label="Available Tables (Ready for seating)">
+                    {tables
+                      .filter(t => t.status === 'AVAILABLE')
+                      .sort((a, b) => a.capacity - b.capacity || a.table_number.localeCompare(b.table_number))
+                      .map(t => {
+                        const partySize = callModalData.queueEntry.party_size || 2;
+                        const isFit = t.capacity >= partySize;
+                        return (
+                          <option key={t.id} value={t.id}>
+                            🟢 {t.table_number} — Seats {t.capacity} {isFit ? '(Best Fit)' : '(Under party size)'}
+                          </option>
+                        );
+                      })}
+                  </optgroup>
+                )}
+                {tables.filter(t => t.status !== 'AVAILABLE').length > 0 && (
+                  <optgroup label="Occupied or Preparing (Cannot be assigned)">
+                    {tables
+                      .filter(t => t.status !== 'AVAILABLE')
+                      .map(t => (
+                        <option key={t.id} value={t.id} disabled>
+                          ⚪ {t.table_number} ({t.status} - Seats {t.capacity})
+                        </option>
+                      ))}
+                  </optgroup>
+                )}
               </select>
             </div>
 
@@ -1730,6 +1799,7 @@ export default function DashboardView({ restaurantId = 'rest-dineflow-01', onOpe
             <div style={{ display: 'flex', gap: '10px' }}>
               <button 
                 onClick={handleConfirmCall}
+                disabled={!callModalData.selectedTableId || !tables.find(t => t.id === callModalData.selectedTableId && t.status === 'AVAILABLE')}
                 className="btn btn-primary"
                 style={{ flex: 1 }}
               >

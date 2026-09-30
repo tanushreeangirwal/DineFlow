@@ -29,6 +29,7 @@ export default function CustomerView({ restaurantId = 'rest-dineflow-01', onSwit
   const [name, setName] = useState('');
   const [mobile, setMobile] = useState('');
   const [marketingConsent, setMarketingConsent] = useState(false);
+  const [partySize, setPartySize] = useState(2);
   const [seatingPref, setSeatingPref] = useState('Any Table');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -212,6 +213,8 @@ export default function CustomerView({ restaurantId = 'rest-dineflow-01', onSwit
           restaurantId,
           name: name.trim(),
           mobile: mobile.trim(),
+          partySize: parseInt(partySize, 10) || 2,
+          seatingPreference: seatingPref,
           marketingConsent
         })
       });
@@ -756,6 +759,32 @@ export default function CustomerView({ restaurantId = 'rest-dineflow-01', onSwit
                   </div>
 
                   <div className="form-group">
+                    <label className="form-label">Number of Guests</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '6px' }}>
+                      {[1, 2, 3, 4, 5, 6].map(num => (
+                        <button
+                          key={num}
+                          type="button"
+                          onClick={() => setPartySize(num)}
+                          style={{
+                            padding: '10px 0',
+                            textAlign: 'center',
+                            borderRadius: '10px',
+                            border: partySize === num ? '2px solid var(--brand-red)' : '1px solid var(--border-subtle)',
+                            background: partySize === num ? 'var(--brand-red-subtle)' : '#FFFFFF',
+                            color: partySize === num ? 'var(--brand-red)' : 'var(--text-primary)',
+                            fontWeight: 700,
+                            fontSize: '14px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {num === 6 ? '6+' : num}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="form-group">
                     <label className="form-label">Seating Preference</label>
                     <select 
                       className="form-input"
@@ -763,7 +792,7 @@ export default function CustomerView({ restaurantId = 'rest-dineflow-01', onSwit
                       onChange={(e) => setSeatingPref(e.target.value)}
                     >
                       <option value="Any Table">Any Available Table (Fastest)</option>
-                      <option value="Main Dining Hall">Main Dining Hall</option>
+                      <option value="Main Hall">Main Dining Hall</option>
                       <option value="Outdoor Terrace">Outdoor Garden Terrace</option>
                       <option value="Window Booth">Window Booth</option>
                     </select>

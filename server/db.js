@@ -63,6 +63,8 @@ function initDb() {
       token_number TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'WAITING', -- WAITING, READY, SERVED, SKIPPED, CANCELLED
       assigned_table_id TEXT,
+      party_size INTEGER DEFAULT 2,
+      seating_preference TEXT DEFAULT 'Any Table',
       joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       called_at DATETIME,
       completed_at DATETIME,
@@ -125,6 +127,8 @@ function initDb() {
   // Safely ensure columns exist for existing databases
   try { db.exec(`ALTER TABLE tables ADD COLUMN section TEXT DEFAULT 'Main Hall'`); } catch (e) {}
   try { db.exec(`ALTER TABLE visits ADD COLUMN payment_status TEXT DEFAULT 'PENDING'`); } catch (e) {}
+  try { db.exec(`ALTER TABLE queue_entries ADD COLUMN party_size INTEGER DEFAULT 2`); } catch (e) {}
+  try { db.exec(`ALTER TABLE queue_entries ADD COLUMN seating_preference TEXT DEFAULT 'Any Table'`); } catch (e) {}
 
   seedDefaultData();
   seedMenuItems();
@@ -150,28 +154,28 @@ function seedDefaultData() {
     '+91 98765 43210'
   );
 
-  // Add initial tables: some occupied, some preparing, some available
+  // Add initial tables: realistic full restaurant state
   const insertTable = db.prepare(`
-    INSERT INTO tables (id, restaurant_id, table_number, status, capacity)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO tables (id, restaurant_id, table_number, status, capacity, section)
+    VALUES (?, ?, ?, ?, ?, ?)
   `);
 
   const initialTables = [
-    { id: 'tab-01', num: 'T-01', status: 'AVAILABLE', capacity: 2 },
-    { id: 'tab-02', num: 'T-02', status: 'AVAILABLE', capacity: 4 },
-    { id: 'tab-03', num: 'T-03', status: 'OCCUPIED', capacity: 4 },
-    { id: 'tab-04', num: 'T-04', status: 'OCCUPIED', capacity: 6 },
-    { id: 'tab-05', num: 'T-05', status: 'PREPARING', capacity: 4 },
-    { id: 'tab-06', num: 'T-06', status: 'OCCUPIED', capacity: 2 },
-    { id: 'tab-07', num: 'T-07', status: 'OCCUPIED', capacity: 4 },
-    { id: 'tab-08', num: 'T-08', status: 'AVAILABLE', capacity: 8 }
+    { id: 'tab-01', num: 'T-01', status: 'OCCUPIED', capacity: 2, section: 'Window Booth' },
+    { id: 'tab-02', num: 'T-02', status: 'OCCUPIED', capacity: 4, section: 'Main Hall' },
+    { id: 'tab-03', num: 'T-03', status: 'OCCUPIED', capacity: 4, section: 'Main Hall' },
+    { id: 'tab-04', num: 'T-04', status: 'OCCUPIED', capacity: 6, section: 'Outdoor Terrace' },
+    { id: 'tab-05', num: 'T-05', status: 'PREPARING', capacity: 4, section: 'Main Hall' },
+    { id: 'tab-06', num: 'T-06', status: 'OCCUPIED', capacity: 2, section: 'Window Booth' },
+    { id: 'tab-07', num: 'T-07', status: 'OCCUPIED', capacity: 4, section: 'Main Hall' },
+    { id: 'tab-08', num: 'T-08', status: 'ASSIGNED', capacity: 8, section: 'Main Hall' }
   ];
 
   for (const t of initialTables) {
-    insertTable.run(t.id, defaultRestaurantId, t.num, t.status, t.capacity);
+    insertTable.run(t.id, defaultRestaurantId, t.num, t.status, t.capacity, t.section);
   }
 
-  // Add initial sample customers & queue entries so the dashboard starts with realistic data
+  // Add initial sample customers & queue entries
   const insertCustomer = db.prepare(`
     INSERT INTO customers (id, restaurant_id, name, mobile, marketing_consent, visit_count, total_spend, latest_bill, last_visit)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now', ?))
@@ -192,15 +196,17 @@ function seedDefaultData() {
   insertVisit.run('vis-02', defaultRestaurantId, 'cust-02', 'tab-04', 1850.0, '-3 days');
   insertVisit.run('vis-03', defaultRestaurantId, 'cust-04', 'tab-06', 3100.0, '-2 days');
 
-  // Insert a couple of existing queue entries for demonstration
+  // Insert initial queue entries:
+  // A-021 has been called and assigned to Table T-08 (READY)
+  // A-022 and A-023 are in line (WAITING)
   const insertQueue = db.prepare(`
-    INSERT INTO queue_entries (id, restaurant_id, customer_id, token_number, status, joined_at, estimated_wait)
-    VALUES (?, ?, ?, ?, ?, datetime('now', ?), ?)
+    INSERT INTO queue_entries (id, restaurant_id, customer_id, token_number, status, assigned_table_id, party_size, seating_preference, joined_at, called_at, estimated_wait)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now', ?), ?, ?)
   `);
 
-  insertQueue.run('q-01', defaultRestaurantId, 'cust-01', 'A-021', 'WAITING', '-12 minutes', 8);
-  insertQueue.run('q-02', defaultRestaurantId, 'cust-02', 'A-022', 'WAITING', '-8 minutes', 12);
-  insertQueue.run('q-03', defaultRestaurantId, 'cust-03', 'A-023', 'WAITING', '-4 minutes', 16);
+  insertQueue.run('q-01', defaultRestaurantId, 'cust-01', 'A-021', 'READY', 'tab-08', 5, 'Any Table', '-15 minutes', new Date().toISOString(), 0);
+  insertQueue.run('q-02', defaultRestaurantId, 'cust-02', 'A-022', 'WAITING', null, 2, 'Window Booth', '-8 minutes', null, 8);
+  insertQueue.run('q-03', defaultRestaurantId, 'cust-03', 'A-023', 'WAITING', null, 4, 'Main Hall', '-4 minutes', null, 14);
 }
 
 function seedMenuItems() {
